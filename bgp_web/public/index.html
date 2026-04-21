@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BGP Simulator — CSE3150</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0a0c0f;
+      --bg2:      #0f1318;
+      --bg3:      #141920;
+      --border:   #1e2730;
+      --cyan:     #00d4ff;
+      --cyan-dim: #0099bb;
+      --green:    #00ff88;
+      --red:      #ff4466;
+      --text:     #c8d6e5;
+      --text-dim: #5a7080;
+      --blue:     #7ab8ff;
+      --mono:     'IBM Plex Mono', monospace;
+      --sans:     'Space Grotesk', sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Grid overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,212,255,.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,255,.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Radial glow */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -200px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 800px;
+      height: 500px;
+      background: radial-gradient(ellipse at center, rgba(0,212,255,.07) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .page-wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+
+    /* ── HEADER ── */
+    header {
+      text-align: center;
+      padding: 80px 0 60px;
+    }
+
+    .header-tag {
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: .2em;
+      color: var(--cyan);
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+
+    header h1 {
+      font-size: clamp(2.4rem, 6vw, 4rem);
+      font-weight: 700;
+      line-height: 1.1;
+      letter-spacing: -.02em;
+      color: #fff;
+      margin-bottom: 16px;
+    }
+
+    header h1 span { color: var(--cyan); }
+
+    .subtitle {
+      font-size: 1.05rem;
+      color: var(--text-dim);
+      max-width: 540px;
+      margin: 0 auto 32px;
+      line-height: 1.6;
+    }
+
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+    }
+
+    .badge {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 5px 12px;
+      border-radius: 4px;
+      border: 1px solid;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .badge-cyan  { border-color: var(--cyan);  color: var(--cyan);  background: rgba(0,212,255,.07); }
+    .badge-green { border-color: var(--green); color: var(--green); background: rgba(0,255,136,.07); }
+    .badge-blue  { border-color: var(--blue);  color: var(--blue);  background: rgba(122,184,255,.07); }
+
+    /* ── CARD ── */
+    .card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px;
+      margin-bottom: 24px;
+    }
+
+    .card-title {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin-bottom: 28px;
+    }
+
+    /* ── INPUT GRID ── */
+    .input-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    @media (max-width: 600px) {
+      .input-grid { grid-template-columns: 1fr; }
+    }
+
+    .drop-zone {
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      padding: 28px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      background: var(--bg3);
+      position: relative;
+    }
+
+    .drop-zone:hover,
+    .drop-zone.dragover { border-color: var(--cyan); background: rgba(0,212,255,.04); }
+
+    .drop-zone.loaded { border-color: var(--green); border-style: solid; background: rgba(0,255,136,.04); }
+
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .dz-icon { font-size: 28px; margin-bottom: 10px; }
+
+    .dz-label {
+      font-size: .8rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .dz-hint {
+      font-family: var(--mono);
+      font-size: .7rem;
+      color: var(--text-dim);
+    }
+
+    .dz-filename {
+      font-family: var(--mono);
+      font-size: .7rem;
+      color: var(--green);
+      margin-top: 8px;
+      word-break: break-all;
+    }
+
+    /* Number input */
+    .input-field-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .input-field-wrap label {
+      font-size: .8rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .input-field-wrap .field-hint {
+      font-family: var(--mono);
+      font-size: .7rem;
+      color: var(--text-dim);
+    }
+
+    .input-field-wrap input[type="number"] {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: .9rem;
+      padding: 14px 16px;
+      width: 100%;
+      outline: none;
+      transition: border-color .2s;
+      -moz-appearance: textfield;
+    }
+
+    .input-field-wrap input[type="number"]::-webkit-inner-spin-button,
+    .input-field-wrap input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+    .input-field-wrap input[type="number"]:focus { border-color: var(--cyan); }
+
+    /* ── RUN BUTTON ── */
+    .run-btn {
+      width: 100%;
+      padding: 16px;
+      background: var(--cyan);
+      color: #000;
+      font-family: var(--sans);
+      font-size: 1rem;
+      font-weight: 700;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      letter-spacing: .04em;
+      transition: background .2s, transform .1s, opacity .2s;
+    }
+
+    .run-btn:hover:not(:disabled) { background: #33ddff; transform: translateY(-1px); }
+    .run-btn:active:not(:disabled) { transform: translateY(0); }
+    .run-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+    /* ── STATUS ── */
+    .status {
+      margin-top: 16px;
+      padding: 12px 16px;
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-size: .82rem;
+      display: none;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status.info    { display: flex; background: rgba(0,212,255,.08); color: var(--cyan); border: 1px solid rgba(0,212,255,.2); }
+    .status.success { display: flex; background: rgba(0,255,136,.08); color: var(--green); border: 1px solid rgba(0,255,136,.2); }
+    .status.error   { display: flex; background: rgba(255,68,102,.08); color: var(--red); border: 1px solid rgba(255,68,102,.2); }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    /* ── RESULTS ── */
+    #results-card { display: none; }
+
+    .results-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    #results-meta {
+      font-family: var(--mono);
+      font-size: .82rem;
+      color: var(--text-dim);
+    }
+
+    #results-meta strong { color: var(--green); }
+
+    .dl-btn {
+      font-family: var(--mono);
+      font-size: .78rem;
+      padding: 8px 16px;
+      background: transparent;
+      border: 1px solid var(--green);
+      color: var(--green);
+      border-radius: 6px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background .2s;
+    }
+
+    .dl-btn:hover { background: rgba(0,255,136,.1); }
+
+    .table-wrap { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--mono);
+      font-size: .8rem;
+    }
+
+    thead th {
+      text-align: left;
+      padding: 10px 14px;
+      font-size: .7rem;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      border-bottom: 1px solid var(--border);
+    }
+
+    tbody tr { border-bottom: 1px solid rgba(30,39,48,.7); }
+    tbody tr:hover { background: rgba(255,255,255,.02); }
+
+    tbody td { padding: 9px 14px; vertical-align: top; }
+
+    td.asn  { color: var(--cyan); }
+    td.pfx  { color: var(--blue); }
+    td.path { color: var(--text-dim); word-break: break-all; }
+
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    #page-info {
+      font-family: var(--mono);
+      font-size: .75rem;
+      color: var(--text-dim);
+    }
+
+    .pg-btn {
+      font-family: var(--mono);
+      font-size: .75rem;
+      padding: 6px 14px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 5px;
+      cursor: pointer;
+      transition: border-color .2s, color .2s;
+    }
+
+    .pg-btn:hover:not(:disabled) { border-color: var(--cyan); color: var(--cyan); }
+    .pg-btn:disabled { opacity: .3; cursor: not-allowed; }
+
+    /* ── HOW IT WORKS ── */
+    .how-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    @media (max-width: 640px) { .how-grid { grid-template-columns: 1fr; } }
+
+    .how-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px 20px;
+    }
+
+    .how-step {
+      font-family: var(--mono);
+      font-size: .68rem;
+      letter-spacing: .15em;
+      color: var(--cyan);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .how-card h3 { font-size: .95rem; font-weight: 600; margin-bottom: 8px; color: #fff; }
+    .how-card p  { font-size: .82rem; color: var(--text-dim); line-height: 1.55; }
+
+    /* ── FOOTER ── */
+    footer {
+      text-align: center;
+      padding: 32px 0 0;
+      border-top: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: .72rem;
+      color: var(--text-dim);
+      letter-spacing: .06em;
+    }
+  </style>
+</head>
+<body>
+<div class="page-wrap">
+
+  <!-- ── HEADER ── -->
+  <header>
+    <div class="header-tag">CSE3150 // Internet Routing</div>
+    <h1>BGP <span>Simulator</span></h1>
+    <p class="subtitle">
+      Full BGP route-propagation engine compiled to WebAssembly.
+      Runs entirely in your browser — no server, no uploads.
+    </p>
+    <div class="badges">
+      <span class="badge badge-cyan">WebAssembly</span>
+      <span class="badge badge-cyan">Client-side</span>
+      <span class="badge badge-green">Gao-Rexford</span>
+      <span class="badge badge-green">ROV Support</span>
+      <span class="badge badge-blue">C++17</span>
+    </div>
+  </header>
+
+  <!-- ── INPUT CARD ── -->
+  <div class="card">
+    <div class="card-title">01 — Configure Simulation</div>
+
+    <div class="input-grid">
+      <!-- AS Relationships -->
+      <div class="drop-zone" id="dz-rel">
+        <input type="file" id="fi-rel" accept=".txt" />
+        <div class="dz-icon">🌐</div>
+        <div class="dz-label">AS Relationships</div>
+        <div class="dz-hint">Drop .txt file here or click</div>
+        <div class="dz-filename" id="fn-rel"></div>
+      </div>
+
+      <!-- Announcements -->
+      <div class="drop-zone" id="dz-ann">
+        <input type="file" id="fi-ann" accept=".csv" />
+        <div class="dz-icon">📡</div>
+        <div class="dz-label">Announcements CSV</div>
+        <div class="dz-hint">Drop .csv file here or click</div>
+        <div class="dz-filename" id="fn-ann"></div>
+      </div>
+
+      <!-- ROV ASNs -->
+      <div class="drop-zone" id="dz-rov">
+        <input type="file" id="fi-rov" />
+        <div class="dz-icon">🛡️</div>
+        <div class="dz-label">ROV ASNs</div>
+        <div class="dz-hint">Optional — drop file or click</div>
+        <div class="dz-filename" id="fn-rov"></div>
+      </div>
+
+      <!-- Target ASN -->
+      <div class="input-field-wrap" style="justify-content: center;">
+        <label for="target-asn">Target ASN</label>
+        <span class="field-hint">Filter results to this AS number</span>
+        <input type="number" id="target-asn" placeholder="e.g. 13335" min="1" />
+      </div>
+    </div>
+
+    <button class="run-btn" id="run-btn" disabled>Run Simulation</button>
+    <div class="status" id="status"></div>
+  </div>
+
+  <!-- ── RESULTS CARD ── -->
+  <div class="card" id="results-card">
+    <div class="card-title">02 — Results</div>
+    <div class="results-header">
+      <div id="results-meta">—</div>
+      <a id="dl-btn" class="dl-btn" download="ribs.csv">⬇ Download ribs.csv</a>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ASN</th>
+            <th>Prefix</th>
+            <th>AS Path</th>
+          </tr>
+        </thead>
+        <tbody id="tbl-body"></tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <button class="pg-btn" id="btn-prev" disabled>← Prev</button>
+      <span id="page-info"></span>
+      <button class="pg-btn" id="btn-next" disabled>Next →</button>
+    </div>
+  </div>
+
+  <!-- ── HOW IT WORKS ── -->
+  <div class="how-grid">
+    <div class="how-card">
+      <div class="how-step">Step 01</div>
+      <h3>Upload Files</h3>
+      <p>Drop your CAIDA AS-relationship file, announcements CSV, and optional ROV ASN list into the browser. Nothing leaves your machine.</p>
+    </div>
+    <div class="how-card">
+      <div class="how-step">Step 02</div>
+      <h3>Simulate in Browser</h3>
+      <p>The C++17 BGP engine — compiled to WebAssembly — propagates routes UP → ACROSS → DOWN through the full AS graph using Gao-Rexford rules.</p>
+    </div>
+    <div class="how-card">
+      <div class="how-step">Step 03</div>
+      <h3>Inspect &amp; Export</h3>
+      <p>Filter results by target ASN, browse the paginated RIB table, and download the full <code style="color:var(--cyan)">ribs.csv</code> output for offline analysis.</p>
+    </div>
+  </div>
+
+  <footer>BGP Simulator &middot; CSE3150 &middot; Running client-side via WebAssembly</footer>
+</div>
+
+<!-- WASM module — generated by build_wasm.sh -->
+<script src="bgp_simulator.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  const PAGE_SIZE = 50;
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  let wasmReady = false;
+  let Module    = null;
+  const files   = { rel: null, ann: null, rov: null };
+  let allRows   = [];
+  let page      = 0;
+
+  // ── DOM refs ───────────────────────────────────────────────────────────────
+  const runBtn      = document.getElementById('run-btn');
+  const statusEl    = document.getElementById('status');
+  const resultsCard = document.getElementById('results-card');
+  const tblBody     = document.getElementById('tbl-body');
+  const resultsMeta = document.getElementById('results-meta');
+  const dlBtn       = document.getElementById('dl-btn');
+  const btnPrev     = document.getElementById('btn-prev');
+  const btnNext     = document.getElementById('btn-next');
+  const pageInfo    = document.getElementById('page-info');
+  const targetInput = document.getElementById('target-asn');
+
+  // ── Init WASM ──────────────────────────────────────────────────────────────
+  BGPModule().then(function (mod) {
+    Module    = mod;
+    wasmReady = true;
+    updateRunBtn();
+    setStatus('info', 'WebAssembly module loaded — ready to simulate.');
+  }).catch(function (err) {
+    setStatus('error', 'Failed to load WebAssembly module: ' + err.message);
+  });
+
+  // ── Drop zone setup ────────────────────────────────────────────────────────
+  function setupDropZone(dzId, inputId, fnId, key) {
+    const dz    = document.getElementById(dzId);
+    const input = document.getElementById(inputId);
+    const fn    = document.getElementById(fnId);
+
+    function loadFile(file) {
+      if (!file) return;
+      files[key] = file;
+      fn.textContent = file.name;
+      dz.classList.add('loaded');
+      updateRunBtn();
+    }
+
+    dz.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      dz.classList.add('dragover');
+    });
+
+    dz.addEventListener('dragleave', function () {
+      dz.classList.remove('dragover');
+    });
+
+    dz.addEventListener('drop', function (e) {
+      e.preventDefault();
+      dz.classList.remove('dragover');
+      loadFile(e.dataTransfer.files[0]);
+    });
+
+    input.addEventListener('change', function () {
+      loadFile(input.files[0]);
+    });
+  }
+
+  setupDropZone('dz-rel', 'fi-rel', 'fn-rel', 'rel');
+  setupDropZone('dz-ann', 'fi-ann', 'fn-ann', 'ann');
+  setupDropZone('dz-rov', 'fi-rov', 'fn-rov', 'rov');
+
+  targetInput.addEventListener('input', updateRunBtn);
+
+  // ── Run button state ───────────────────────────────────────────────────────
+  function updateRunBtn() {
+    runBtn.disabled = !(wasmReady && files.rel && files.ann && targetInput.value.trim() !== '');
+  }
+
+  // ── Run handler ───────────────────────────────────────────────────────────
+  runBtn.addEventListener('click', function () {
+    setStatus('info', 'Running simulation…', true);
+    runBtn.disabled = true;
+    resultsCard.style.display = 'none';
+
+    // Read all files
+    Promise.all([
+      readFile(files.rel),
+      readFile(files.ann),
+      files.rov ? readFile(files.rov) : Promise.resolve(new ArrayBuffer(0))
+    ]).then(function (bufs) {
+      // Yield so browser can repaint the spinner
+      return new Promise(function (resolve) {
+        setTimeout(function () { resolve(bufs); }, 10);
+      });
+    }).then(function (bufs) {
+      const relBuf = bufs[0];
+      const annBuf = bufs[1];
+      const rovBuf = bufs[2];
+
+      // Write files into WASM virtual FS
+      Module.FS.writeFile('/rel.txt',  new Uint8Array(relBuf));
+      Module.FS.writeFile('/ann.csv',  new Uint8Array(annBuf));
+      Module.FS.writeFile('/rov.csv',  new Uint8Array(rovBuf));
+
+      // Run simulation
+      var rc = Module.ccall(
+        'bgp_run',
+        'number',
+        ['string', 'string', 'string', 'string'],
+        ['/rel.txt', '/ann.csv', '/rov.csv', '/out.csv']
+      );
+
+      if (rc === 1) {
+        throw new Error('Cycle detected in AS relationships');
+      }
+      if (rc !== 0) {
+        throw new Error('Simulation failed with error code ' + rc);
+      }
+
+      // Read output
+      var outBytes = Module.FS.readFile('/out.csv');
+      var csvData  = new TextDecoder().decode(outBytes);
+
+      // Free C++ objects
+      Module.ccall('bgp_free', null, [], []);
+
+      // Clean up FS
+      ['rel.txt', 'ann.csv', 'rov.csv', 'out.csv'].forEach(function (f) {
+        try { Module.FS.unlink('/' + f); } catch (_) {}
+      });
+
+      // Parse and filter
+      var lines = csvData.split('\n');
+      lines.shift(); // remove header
+      lines = lines.filter(function (l) { return l.trim() !== ''; });
+
+      var targetAsn = targetInput.value.trim();
+      var filtered  = lines.filter(function (l) {
+        return l === targetAsn + ',' || l.startsWith(targetAsn + ',');
+      });
+
+      if (filtered.length === 0) {
+        throw new Error('No routes found for ASN ' + targetAsn);
+      }
+
+      // Set download link to full CSV
+      var blob = new Blob([csvData], { type: 'text/csv' });
+      dlBtn.href = URL.createObjectURL(blob);
+
+      allRows = filtered;
+      page    = 0;
+      renderTable();
+
+      resultsCard.style.display = 'block';
+      setStatus('success', 'Simulation complete — ' + filtered.length + ' route(s) found for ASN ' + targetAsn + '.');
+
+    }).catch(function (err) {
+      setStatus('error', err.message || String(err));
+      // Free on error too
+      try { Module.ccall('bgp_free', null, [], []); } catch (_) {}
+      ['rel.txt', 'ann.csv', 'rov.csv', 'out.csv'].forEach(function (f) {
+        try { Module.FS.unlink('/' + f); } catch (_) {}
+      });
+    }).finally(function () {
+      updateRunBtn();
+    });
+  });
+
+  // ── Table render ──────────────────────────────────────────────────────────
+  function renderTable() {
+    var start   = page * PAGE_SIZE;
+    var end     = Math.min(start + PAGE_SIZE, allRows.length);
+    var slice   = allRows.slice(start, end);
+    var totalPg = Math.ceil(allRows.length / PAGE_SIZE);
+
+    var html = '';
+    slice.forEach(function (row) {
+      var cols = parseCSVRow(row);
+      var asn  = escHtml(cols[0] || '');
+      var pfx  = escHtml(cols[1] || '');
+      var path = escHtml(cols[2] || '');
+      html += '<tr><td class="asn">'  + asn  + '</td>'
+                + '<td class="pfx">'  + pfx  + '</td>'
+                + '<td class="path">' + path + '</td></tr>';
+    });
+    tblBody.innerHTML = html;
+
+    resultsMeta.innerHTML = '<strong>' + allRows.length + '</strong> route(s) found';
+    pageInfo.textContent  = 'Page ' + (page + 1) + ' of ' + totalPg;
+    btnPrev.disabled = (page === 0);
+    btnNext.disabled = (page >= totalPg - 1);
+  }
+
+  btnPrev.addEventListener('click', function () { if (page > 0) { page--; renderTable(); } });
+  btnNext.addEventListener('click', function () {
+    if ((page + 1) * PAGE_SIZE < allRows.length) { page++; renderTable(); }
+  });
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function readFile(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload  = function (e) { resolve(e.target.result); };
+      reader.onerror = function ()  { reject(new Error('Failed to read file: ' + file.name)); };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function parseCSVRow(row) {
+    var fields  = [];
+    var current = '';
+    var inQuote = false;
+    for (var i = 0; i < row.length; i++) {
+      var ch = row[i];
+      if (ch === '"') {
+        inQuote = !inQuote;
+      } else if (ch === ',' && !inQuote) {
+        fields.push(current);
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+    fields.push(current);
+    return fields;
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function setStatus(type, msg, spinner) {
+    statusEl.className = 'status ' + type;
+    statusEl.innerHTML = (spinner ? '<div class="spinner"></div>' : '')
+                       + '<span>' + escHtml(msg) + '</span>';
+  }
+})();
+</script>
+</body>
+</html>
